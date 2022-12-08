@@ -1,0 +1,13 @@
+pip
+wheel
+requests
+
+# Development
+jupyterlab
+
+# Dataset
+kaggle
+
+# Search
+pyvespa
+
