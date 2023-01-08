@@ -1,3 +1,6 @@
 black
 flake8
+
+# Development
+jupyterlab
 pre-commit

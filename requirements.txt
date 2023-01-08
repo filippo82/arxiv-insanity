@@ -1,19 +1,16 @@
-pip
-wheel
-requests
-
-# Development
-jupyterlab
-
-# TBD
-pydantic
-
-# Data engineering
-prefect-gcp[cloud_storage,bigquery,secret_manager]
 gcsfs
 
 # Dataset
 kaggle
+pip
+
+# Data engineering
+prefect-gcp[cloud_storage,bigquery,secret_manager]
+
+# TBD
+pydantic
 
 # Search
 pyvespa
+requests
+wheel
