@@ -5,9 +5,15 @@ requests
 # Development
 jupyterlab
 
+# TBD
+pydantic
+
+# Data engineering
+prefect-gcp[cloud_storage,bigquery,secret_manager]
+gcsfs
+
 # Dataset
 kaggle
 
 # Search
 pyvespa
-
