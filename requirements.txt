@@ -1,7 +1,11 @@
-gcsfs
 
 # Dataset
+arxiv
+bokeh==2.4.3
+dask[dataframe,distributed]
+gcsfs
 kaggle
+# General
 pip
 
 # Data engineering
@@ -13,4 +17,12 @@ pydantic
 # Search
 pyvespa
 requests
+sentence_transformers
+
+# App
+streamlit
+
+# NLP
+transformers
+ujson
 wheel

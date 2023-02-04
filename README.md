@@ -1,10 +1,6 @@
 # arxiv-insanity
-TBD
 
-## Setup
+A project born out of curiosity.
+Heavily based on the new version of [arxiv-sanity](https://github.com/karpathy/arxiv-sanity-lite).
 
-```shell
-pyenv virtualenv arxiv
-pyenv local
-pip install -U -r requirements.txt
-```
+More to come ...
