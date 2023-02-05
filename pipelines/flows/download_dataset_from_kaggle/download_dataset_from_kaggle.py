@@ -109,6 +109,8 @@ def prepare_jsonl_for_bigquery():
             for k, v in article.items():
                 if k in invalid_field_names.keys():
                     processed[invalid_field_names[k]] = v
+                elif k == "categories":
+                    processed["categories"] = processed["categories"].split(" ")
                 elif k == "authors_parsed":
                     authors_processed = []
                     for author in article["authors_parsed"]:
@@ -120,6 +122,10 @@ def prepare_jsonl_for_bigquery():
                             },
                         )
                     processed["authors_parsed"] = authors_processed
+                    processed["authors"] = [
+                        f'{author["first_name"]} {author["last_name"]} {author["other_name"]}'.strip()
+                        for author in processed["authors_parsed"]
+                    ]
                 else:
                     processed[k] = v
 
