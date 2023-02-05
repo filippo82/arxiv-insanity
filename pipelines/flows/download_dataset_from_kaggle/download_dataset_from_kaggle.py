@@ -4,17 +4,25 @@ import json
 import sys
 
 import prefect
+from dateutil.parser import parse
 from kaggle.api.kaggle_api_extended import KaggleApi
 from prefect import flow
 from prefect import get_run_logger
 from prefect import task
+from prefect.blocks.system import DateTime
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
+
+DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
+DATE_FORMAT = "%Y-%m-%d"
+
+KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
 
 FN = "arxiv-metadata-oai-snapshot.json"
 FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
 
 PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
+PREFECT_STORAGE_BLOCK_DATETIME = "block-datetime-arxiv-data-last-updated"
 
 
 @task
@@ -30,8 +38,45 @@ def download_dataset():
     api.authenticate()
 
     logger.info("Start downloading dataset")
-    api.dataset_download_files("Cornell-University/arxiv", quiet=False, unzip=True)
+    api.dataset_download_files(KAGGLE_DATASET_NAME, quiet=False, unzip=True)
     logger.info("Dataset has been downloaded")
+
+
+@task
+def get_dataset_last_updated():
+    """Retrieve the date of the last update for the dataset and
+    store it into a Prefect Date Time storage block.
+    """
+    logger = get_run_logger()
+
+    # Create Kaggle client
+    api = KaggleApi()
+    api.authenticate()
+
+    datasets = api.datasets_list(search=KAGGLE_DATASET_NAME)
+
+    last_updated = None
+
+    for dataset in datasets:
+        if dataset.get("ref") == KAGGLE_DATASET_NAME:
+            last_updated = dataset.get("lastUpdated")
+            break
+
+    if last_updated:
+        last_updated_parsed = parse(last_updated)
+        last_updated_formatted = last_updated_parsed.date().strftime(DATETIME_FORMAT)
+    else:
+        raise ValueError(f"The {KAGGLE_DATASET_NAME} dataset has no `lastUpdated` field")
+
+    logger.info(f"The {KAGGLE_DATASET_NAME} dataset has been last updated on {last_updated_formatted}")
+
+    block_last_updated = DateTime(value=last_updated_formatted)
+    # With `overwrite=True` we overwrite the existing block
+    uuid = block_last_updated.save(name=PREFECT_STORAGE_BLOCK_DATETIME, overwrite=True)
+
+    logger.info(
+        f"The {PREFECT_STORAGE_BLOCK_DATETIME} Date Time storage block has been created with UUID {uuid}",
+    )
 
 
 @task
@@ -131,6 +176,7 @@ def flow_get_arxiv_kaggle_dataset(name: str = "Filippo"):
     logger = get_run_logger()
     log_prefect_version(name)
     download_dataset()
+    get_dataset_last_updated()
     prepare_jsonl_for_bigquery()
     path = copy_processed_file_to_bucket()
     logger.info(f"The processed file has been stored at {path}")
