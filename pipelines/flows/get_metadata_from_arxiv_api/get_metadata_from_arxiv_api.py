@@ -99,6 +99,7 @@ def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
 
                 article = {
                     "id": arxiv_id,
+                    "link": entry.get("id"),
                     "submitter": None,
                     "authors": [author["name"] for author in entry.get("authors", [])],
                     "title": entry.get("title", None),
@@ -116,6 +117,8 @@ def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
                         },
                     ],
                     "update_date": entry.get("updated", None),
+                    # Add origin
+                    "origin": "arxiv_api",
                 }
                 articles.append(article)
 
@@ -136,7 +139,7 @@ def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
             logger.info(f"The request did not return {MAX_RESULTS} entries. We need to wait and try again.")
             time.sleep(2.0)
 
-        if pagination_start > 100:
+        if pagination_start > 2:
             logger.info(f"We stop anyway after making 100 requests of {MAX_RESULTS} entries each.")
             break
 
@@ -187,6 +190,7 @@ def flow_get_metadata_from_arxiv_api(name: str = "Filippo"):
     # prepare_jsonl_for_bigquery()
     # path = copy_processed_file_to_bucket()
     logger.info(f"There are {len(articles)} articles ...")
+    logger.info(articles[:2])
 
 
 if __name__ == "__main__":

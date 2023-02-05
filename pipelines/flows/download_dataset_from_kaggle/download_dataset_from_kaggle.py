@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 
 import prefect
 from dateutil.parser import parse
@@ -18,7 +17,7 @@ DATE_FORMAT = "%Y-%m-%d"
 
 KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
 
-FN = "arxiv-metadata-oai-snapshot.json"
+FN = "../arxiv-metadata-oai-snapshot.json"
 FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
 
 PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
@@ -110,7 +109,7 @@ def prepare_jsonl_for_bigquery():
                 if k in invalid_field_names.keys():
                     processed[invalid_field_names[k]] = v
                 elif k == "categories":
-                    processed["categories"] = processed["categories"].split(" ")
+                    processed["categories"] = article["categories"].split(" ")
                 elif k == "authors_parsed":
                     authors_processed = []
                     for author in article["authors_parsed"]:
@@ -122,12 +121,19 @@ def prepare_jsonl_for_bigquery():
                             },
                         )
                     processed["authors_parsed"] = authors_processed
+                    # Overwrite the original authors field
                     processed["authors"] = [
                         f'{author["first_name"]} {author["last_name"]} {author["other_name"]}'.strip()
                         for author in processed["authors_parsed"]
                     ]
                 else:
                     processed[k] = v
+
+            # Add origin
+            processed["origin"] = "kaggle"
+            # Add link
+            latest_version = sorted(processed["versions"], key=lambda x: x["version"])[-1]["version"]
+            processed["link"] = f'http://arxiv.org/abs/{processed["id"]}{latest_version}'
 
             # Validate processed entry
             # TODO
@@ -189,5 +195,5 @@ def flow_get_arxiv_kaggle_dataset(name: str = "Filippo"):
 
 
 if __name__ == "__main__":
-    name = sys.argv[1]
+    name = "Filippo is in da house"
     flow_get_arxiv_kaggle_dataset(name)
