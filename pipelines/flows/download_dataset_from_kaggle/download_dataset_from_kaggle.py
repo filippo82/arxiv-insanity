@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
+from datetime import timezone
 
 import prefect
 from dateutil.parser import parse
+from dateutil.tz import UTC
 from kaggle.api.kaggle_api_extended import KaggleApi
 from prefect import flow
 from prefect import get_run_logger
@@ -15,10 +18,18 @@ from prefect_gcp.cloud_storage import GcsBucket
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DATE_FORMAT = "%Y-%m-%d"
 
-KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
+env = "PROD"
 
-FN = "../arxiv-metadata-oai-snapshot.json"
-FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
+if env == "PROD":
+    KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
+
+    FN = "arxiv-metadata-oai-snapshot.json"
+    FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
+else:
+    KAGGLE_DATASET_NAME = "filippo82/arxiv-1000-articles"
+
+    FN = "arxiv-metadata-oai-snapshot-1000.json"
+    FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed-1000.jsonl"
 
 PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
 PREFECT_STORAGE_BLOCK_DATETIME = "block-datetime-arxiv-data-last-updated"
@@ -42,7 +53,7 @@ def download_dataset():
 
 
 @task
-def get_dataset_last_updated():
+def save_dataset_last_updated_to_block():
     """Retrieve the date of the last update for the dataset and
     store it into a Prefect Date Time storage block.
     """
@@ -62,14 +73,27 @@ def get_dataset_last_updated():
             break
 
     if last_updated:
-        last_updated_parsed = parse(last_updated)
-        last_updated_formatted = last_updated_parsed.date().strftime(DATETIME_FORMAT)
+        last_updated_parsed = parse(last_updated).astimezone(UTC)
+        # last_updated_formatted = last_updated_parsed.date().strftime(DATETIME_FORMAT)
     else:
         raise ValueError(f"The {KAGGLE_DATASET_NAME} dataset has no `lastUpdated` field")
 
-    logger.info(f"The {KAGGLE_DATASET_NAME} dataset has been last updated on {last_updated_formatted}")
+    logger.info(f"The {KAGGLE_DATASET_NAME} dataset has been last updated on {last_updated_parsed}")
 
-    block_last_updated = DateTime(value=last_updated_formatted)
+    # Replace `tzinfo=tzutc()` with `tzinfo=datetime.timezone.utc`
+    # This is required because `prefect` cannot handle `tzutc()`
+    last_updated_parsed_with_tz = last_updated_parsed.replace(tzinfo=timezone.utc)
+
+    last_updated_parsed_with_tz_minus_time_delta = last_updated_parsed_with_tz - timedelta(days=3)
+
+    logger.info(
+        "There is most likely a time delta between the creation date "
+        "of the Kaggle dataset and the most recent updated date. "
+        "Hence, we return the updated date of the dataset minus 3 days: "
+        f"{last_updated_parsed_with_tz_minus_time_delta}",
+    )
+
+    block_last_updated = DateTime(value=last_updated_parsed_with_tz_minus_time_delta)
     # With `overwrite=True` we overwrite the existing block
     uuid = block_last_updated.save(name=PREFECT_STORAGE_BLOCK_DATETIME, overwrite=True)
 
@@ -134,6 +158,7 @@ def prepare_jsonl_for_bigquery():
             # Add link
             latest_version = sorted(processed["versions"], key=lambda x: x["version"])[-1]["version"]
             processed["link"] = f'http://arxiv.org/abs/{processed["id"]}{latest_version}'
+            processed["id"] = f'{processed["id"]}{latest_version}'
 
             # Validate processed entry
             # TODO
@@ -186,9 +211,9 @@ def flow_get_arxiv_kaggle_dataset(name: str = "Filippo"):
         The name of a dude or dudette, by default "Filippo".
     """
     logger = get_run_logger()
-    log_prefect_version(name)
-    download_dataset()
-    get_dataset_last_updated()
+    # log_prefect_version(name)
+    # download_dataset()
+    save_dataset_last_updated_to_block()
     prepare_jsonl_for_bigquery()
     path = copy_processed_file_to_bucket()
     logger.info(f"The processed file has been stored at {path}")

@@ -1,6 +1,8 @@
 black
 flake8
+jedi_language_server
 
 # Development
 jupyterlab
 pre-commit
+pynvim

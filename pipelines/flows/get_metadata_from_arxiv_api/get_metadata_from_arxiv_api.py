@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -15,26 +16,25 @@ from prefect.blocks.system import DateTime
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
 from requests import Session
+from requests.exceptions import HTTPError
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DATE_FORMAT = "%Y-%m-%d"
 
-MAX_RESULTS = 100
+MAX_RESULTS = 1000
 
 ARXIV_API_BASE_URL = "http://export.arxiv.org/api/query?"
 
-KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
-
-FN = "arxiv-metadata-oai-snapshot.json"
-FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
+TODAY = datetime.today().strftime(DATE_FORMAT)
+FN_PROCESSED = f"arxiv-metadata-from-arxiv-api-processed-{TODAY}.jsonl"
 
 PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
 PREFECT_STORAGE_BLOCK_DATETIME = "block-datetime-arxiv-data-last-updated"
 
 
 @task
-def get_dataset_last_updated_from_block() -> datetime:
-    """Retrieve the date of the last update for the dataset
+def load_dataset_last_updated_from_block() -> datetime:
+    """Retrieve the date of the most recently updated article
     from a Prefect Date Time storage block.
 
     Returns
@@ -46,54 +46,77 @@ def get_dataset_last_updated_from_block() -> datetime:
 
     block_last_updated = DateTime.load(name=PREFECT_STORAGE_BLOCK_DATETIME)
 
-    last_updated_formatted = block_last_updated.value
-
-    # Add time zone
-    last_updated_formatted_with_tz = last_updated_formatted.replace(tzinfo=timezone.utc)
+    last_updated = block_last_updated.value
 
     logger.info(
-        f"The {KAGGLE_DATASET_NAME} dataset has been last updated on {last_updated_formatted_with_tz}",
+        f"The most recent article from arXiv has been last updated on {last_updated}",
     )
 
-    last_updated_formatted_with_tz_minus_one_week = last_updated_formatted_with_tz - timedelta(days=7)
+    last_updated_minus_time_delta = last_updated - timedelta(hours=3)
 
     logger.info(
-        "There is most likely a time delta between the creation date "
-        "of the Kaggle dataset and the most recent updated date. "
-        "Hence, we return the updated date of the dataset minues 7 days: "
-        f"{last_updated_formatted_with_tz_minus_one_week}",
+        "Just to be sure, we return the updated date of the most recent article minus 3 hours: "
+        f"{last_updated_minus_time_delta}",
     )
 
-    return last_updated_formatted_with_tz_minus_one_week
+    return last_updated_minus_time_delta
 
 
 @task
-def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
+def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
+    """_summary_
 
+    From https://info.arxiv.org/help/api/user-manual.html#3311-title-id-link-and-updated:
+
+    > Because the arXiv submission process works on a 24 hour submission cycle,
+    new articles are only available to the API on the midnight after the articles were processed.
+    The <updated> tag thus reflects the midnight of the day that you are calling the API.
+    This is very important - search results do not change until new articles are added.
+    Therefore there is no need to call the API more than once in a day for the same query.
+    Please cache your results. This primarily applies to production systems,
+    and of course you are free to play around with the API while you are developing your program!
+
+    Parameters
+    ----------
+    last_updated_date : datetime
+        _description_
+
+    query : str
+        Query
+
+    Returns
+    -------
+    int
+        Total number of articles retrieved from the arXiv API.
+    """
     logger = get_run_logger()
-
-    query = "cat:cs.*"
 
     session = Session()
 
-    articles = []
+    with open(FN_PROCESSED, "w") as fp:
+        pass
+
+    cnt = 0
     pagination_start = 0
     while True:
         logger.info(f"Page: {pagination_start}")
         query_parameter = f"search_query={query}&sortBy=lastUpdatedDate&start={pagination_start * MAX_RESULTS}&max_results={MAX_RESULTS}"  # noqa
         res = session.get(f"{ARXIV_API_BASE_URL}{query_parameter}")
 
-        res.raise_for_status()
+        try:
+            res.raise_for_status()
+        except HTTPError as e:
+            logger.error(f"ADD ERROR MESSAGE! {e}")
 
-        time.sleep(0.5)
+        time.sleep(1.0)
 
+        articles = []
         res_parsed = feedparser.parse(res.text)
         entries = res_parsed.get("entries", [])
         if len(entries) == MAX_RESULTS:
             is_last_updated_set = False
             # Batch of MAX_RESULTS entries
             for entry in entries:
-
                 arxiv_id = entry.get("id").split("/")[-1]
                 version = arxiv_id[-2:]
 
@@ -110,6 +133,8 @@ def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
                     "categories": [category["term"] for category in entry.get("tags", [])],
                     "license": None,
                     "abstract": entry.get("summary", None),
+                    # NOTE: the way I build `versions` is most likely not accurate.
+                    # `published` indicates when the article was first published as version 1.
                     "versions": [
                         {
                             "version": version,
@@ -125,25 +150,32 @@ def make_get_request(last_updated_from_kaggle_dataset: datetime) -> list[dict]:
                 # We save the first date of the batch because `sortBy=lastUpdatedDate`.
                 # The first item is the most recent
                 if not is_last_updated_set:
+                    is_last_updated_set = True
                     last_updated = parse(article["update_date"])
                     logger.info(f"The most recent article of the batch was updated on {last_updated}")
 
+            with open(FN_PROCESSED, "a") as fp:
+                for article in articles:
+                    json.dump(article, fp)
+                    fp.write("\n")
+
+            cnt += MAX_RESULTS
             pagination_start += 1
 
             logger.info(
-                f"I will keep going till {last_updated} is older than {last_updated_from_kaggle_dataset}.",
+                f"I will keep going till {last_updated} is older than {last_updated_date_from_block}.",
             )
-            if last_updated < last_updated_from_kaggle_dataset:
+            if last_updated < last_updated_date_from_block:
                 break
         else:
             logger.info(f"The request did not return {MAX_RESULTS} entries. We need to wait and try again.")
-            time.sleep(2.0)
+            time.sleep(10.0)
 
-        if pagination_start > 2:
+        if pagination_start > 100:
             logger.info(f"We stop anyway after making 100 requests of {MAX_RESULTS} entries each.")
             break
 
-    return articles
+    return cnt
 
 
 @task
@@ -156,8 +188,28 @@ def copy_processed_file_to_bucket() -> str:
         URI of the processed file in the GCS bucket.
     """
     gcp_cloud_storage_bucket_block = GcsBucket.load(PREFECT_STORAGE_BLOCK_GCS_BUCKET)
-    path = gcp_cloud_storage_bucket_block.upload_from_path(FN_PROCESSED, f"kaggle/{FN_PROCESSED}")
+    path = gcp_cloud_storage_bucket_block.upload_from_path(FN_PROCESSED, f"arxiv-api/{FN_PROCESSED}")
     return path
+
+
+@task
+def save_dataset_last_updated_to_block() -> datetime:
+    """Retrieve the date of the last update for the dataset and
+    store it into a Prefect Date Time storage block.
+    """
+    with open(FN_PROCESSED) as fp:
+        for line in fp:
+            most_recent_article = json.loads(line)
+            break
+
+    last_updated_formatted = parse(most_recent_article["update_date"])
+    last_updated_formatted_with_tz = last_updated_formatted.replace(tzinfo=timezone.utc)
+
+    block_last_updated = DateTime(value=last_updated_formatted_with_tz)
+    # With `overwrite=True` we overwrite the existing block
+    _ = block_last_updated.save(name=PREFECT_STORAGE_BLOCK_DATETIME, overwrite=True)
+
+    return last_updated_formatted_with_tz
 
 
 @task
@@ -175,8 +227,8 @@ def log_prefect_version(name: str):
 
 
 @flow(task_runner=SequentialTaskRunner())
-def flow_get_metadata_from_arxiv_api(name: str = "Filippo"):
-    """Download from Kaggle, process, and copy the JSONL file to a GCS bucket.
+def flow_get_metadata_from_arxiv_api(name: str = "Filippo", query: str = "cat:cs.*"):
+    """Get articles metadata from arXiv API, create a JSONL file, and copy it to a GCS bucket.
 
     Parameters
     ----------
@@ -185,12 +237,17 @@ def flow_get_metadata_from_arxiv_api(name: str = "Filippo"):
     """
     logger = get_run_logger()
     log_prefect_version(name)
-    last_updated_date = get_dataset_last_updated_from_block()
-    articles = make_get_request(last_updated_date)
-    # prepare_jsonl_for_bigquery()
-    # path = copy_processed_file_to_bucket()
-    logger.info(f"There are {len(articles)} articles ...")
-    logger.info(articles[:2])
+    last_updated_date = load_dataset_last_updated_from_block()
+    total_number_of_articles = make_get_request(last_updated_date, query)
+    path = copy_processed_file_to_bucket()
+    last_updated_date = save_dataset_last_updated_to_block()
+    logger.info(
+        f"The metadata for {total_number_of_articles} articles have been retrieved from the arXiv API.",
+    )
+    logger.info(
+        f"The most recent article from the arXiv API has been last updated on {last_updated_date}",
+    )
+    logger.info(f"The processed file has been stored at {path}")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,15 @@
 arxiv
 bokeh==2.4.3
 dask[dataframe,distributed]
+
+# NLP
+fitz # This is needed by chatpaper
 gcsfs
 kaggle
+#langchain @ git+https://github.com/hwchase17/langchain.git # installed in editable mode from a local GitHub repo
+lark
+openai
+
 # General
 pip
 
@@ -15,14 +22,14 @@ prefect-gcp[cloud_storage,bigquery,secret_manager]
 pydantic
 
 # Search
-pyvespa
+pyvespa @ git+https://github.com/vespa-engine/pyvespa.git
 requests
 sentence_transformers
 
 # App
 streamlit
-
-# NLP
+tiktoken
 transformers
 ujson
 wheel
+zarr
