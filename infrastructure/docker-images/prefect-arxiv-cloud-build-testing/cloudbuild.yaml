@@ -2,6 +2,7 @@ steps:
 # Uses the docker build step to build an image
 - name: 'gcr.io/cloud-builders/docker'
   args: [ "build", "-t", "${_IMAGE_NAME_FULL}", "." ]
+  dir: "infrastructure/docker-images/prefect-arxiv-cloud-build-testing"
 
 # Push the image to Container Registry
 images:
