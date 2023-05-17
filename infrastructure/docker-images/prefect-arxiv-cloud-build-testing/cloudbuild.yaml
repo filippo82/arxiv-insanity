@@ -1,0 +1,16 @@
+steps:
+# Uses the docker build step to build an image
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ "build", "-t", "${_IMAGE_NAME_FULL}", "." ]
+
+# Push the image to Container Registry
+images:
+- ${_IMAGE_NAME_FULL}
+
+substitutions:
+    _GCLOUD_ARTIFACTS_REPOSITORY: 'prefect'
+    _IMAGE_NAME: 'prefect-arxiv-cloud-build-testing'
+    _TAG: 'tag2'
+    _IMAGE_NAME_FULL: '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_GCLOUD_ARTIFACTS_REPOSITORY}/${_IMAGE_NAME}:${_TAG}'
+options:
+    dynamic_substitutions: true
