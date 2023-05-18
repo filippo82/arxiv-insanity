@@ -3,7 +3,7 @@ LABEL maintainer="Filippo Broggini <https://github.com/filippo82>"
 
 WORKDIR /opt/arxiv
 
-RUN pip install --no-cache-dir --upgrade pip whell
+RUN pip install --no-cache-dir --upgrade pip wheel
 
 COPY requirements-torch-cpu.txt .
 
