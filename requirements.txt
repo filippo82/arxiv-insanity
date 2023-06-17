@@ -11,6 +11,7 @@ kaggle
 #langchain @ git+https://github.com/hwchase17/langchain.git # installed in editable mode from a local GitHub repo
 lark
 openai
+paper-qa @ git+https://github.com/whitead/paper-qa.git
 
 # General
 pip

@@ -1,8 +1,0 @@
-feedparser
-gcsfs
-kaggle
-prefect-gcp[cloud_storage,bigquery,secret_manager]
-python-dateutil
-requests
-sentence_transformers
-zarr
