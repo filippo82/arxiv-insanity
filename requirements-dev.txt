@@ -4,5 +4,6 @@ jedi_language_server
 
 # Development
 jupyterlab
+mypy
 pre-commit
 pynvim
