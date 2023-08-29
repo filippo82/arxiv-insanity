@@ -24,7 +24,7 @@ pip
 prefect-gcp[cloud_storage,bigquery,secret_manager]
 
 # TBD
-pydantic
+pydantic >= 1.10.0, < 2.0.0
 
 # Search
 pyvespa @ git+https://github.com/vespa-engine/pyvespa.git

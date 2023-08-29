@@ -1,6 +1,6 @@
 black
 flake8
-jedi_language_server
+jedi-language-server == 0.40.0
 
 # Development
 jupyterlab
