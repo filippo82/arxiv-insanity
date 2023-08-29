@@ -28,8 +28,8 @@ ARXIV_API_BASE_URL = "http://export.arxiv.org/api/query?"
 TODAY = datetime.today().strftime(DATE_FORMAT)
 FN_PROCESSED = f"arxiv-metadata-from-arxiv-api-processed-{TODAY}.jsonl"
 
-PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
-PREFECT_STORAGE_BLOCK_DATETIME = "block-datetime-arxiv-data-last-updated"
+PREFECT_STORAGE_BLOCK_GCS_BUCKET = "arxiv-block-bucket-data"
+PREFECT_STORAGE_BLOCK_DATETIME = "arxiv-block-datetime-data-last-updated"
 
 
 @task
@@ -141,7 +141,8 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
                             "created": entry.get("published", None),
                         },
                     ],
-                    "update_date": entry.get("updated", None),
+                    "update_date": parse(entry.get("updated", TODAY)).strftime(DATETIME_FORMAT),
+                    "update_date_ts": int(parse(entry.get("updated", TODAY)).timestamp()),
                     # Add origin
                     "origin": "arxiv_api",
                 }
@@ -151,7 +152,8 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
                 # The first item is the most recent
                 if not is_last_updated_set:
                     is_last_updated_set = True
-                    last_updated = parse(article["update_date"])
+                    # Add UTC time zone
+                    last_updated = parse(f'{article["update_date"]}Z')
                     logger.info(f"The most recent article of the batch was updated on {last_updated}")
 
             with open(FN_PROCESSED, "a") as fp:
@@ -213,7 +215,7 @@ def save_dataset_last_updated_to_block() -> datetime:
 
 
 @task
-def log_prefect_version(name: str):
+def log_prefect_version(name: str) -> None:
     """Simple logger which prints the Prefect version.
 
     Parameters

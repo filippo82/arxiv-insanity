@@ -1,0 +1,41 @@
+
+# Deep learning
+
+# Dataset
+arxiv
+bokeh==2.4.3
+dask[dataframe,distributed]
+evaluate
+
+# NLP
+fitz # This is needed by chatpaper
+gcsfs
+kaggle
+#langchain @ git+https://github.com/hwchase17/langchain.git # installed in editable mode from a local GitHub repo
+lark
+openai
+optimum[onnxruntime]
+paper-qa @ git+https://github.com/whitead/paper-qa.git
+
+# General
+pip
+
+# Data engineering
+prefect-gcp[cloud_storage,bigquery,secret_manager]
+
+# TBD
+pydantic
+
+# Search
+pyvespa @ git+https://github.com/vespa-engine/pyvespa.git
+requests
+sentence_transformers
+
+# App
+streamlit
+tiktoken
+torch
+transformers
+ujson
+wheel
+zarr

@@ -11,35 +11,41 @@ from kaggle.api.kaggle_api_extended import KaggleApi
 from prefect import flow
 from prefect import get_run_logger
 from prefect import task
+from prefect import variables
 from prefect.blocks.system import DateTime
+from prefect.blocks.system import JSON
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 DATE_FORMAT = "%Y-%m-%d"
 
-env = "PROD"
+env = variables.get("arxiv_env", "DEV")
 
 if env == "PROD":
-    KAGGLE_DATASET_NAME = "Cornell-University/arxiv"
+    KAGGLE_DATASET_NAME = variables.get("kaggle_dataset_name")
 
     FN = "arxiv-metadata-oai-snapshot.json"
     FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
 else:
-    KAGGLE_DATASET_NAME = "filippo82/arxiv-1000-articles"
+    KAGGLE_DATASET_NAME = variables.get("kaggle_dataset_name_dev")
 
     FN = "arxiv-metadata-oai-snapshot-1000.json"
     FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed-1000.jsonl"
 
-PREFECT_STORAGE_BLOCK_GCS_BUCKET = "block-bucket-arxiv-data"
-PREFECT_STORAGE_BLOCK_DATETIME = "block-datetime-arxiv-data-last-updated"
+PREFECT_STORAGE_BLOCK_GCS_BUCKET = "arxiv-block-bucket-data"
+PREFECT_STORAGE_BLOCK_DATETIME = "arxiv-block-datetime-data-last-updated"
+PREFECT_STORAGE_BLOCK_JSON = "arxiv-block-json-dataset-version-number"
 
 
 @task
-def download_dataset():
+def download_dataset() -> None:
     """Download the metadata of all arXiv preprints from Kaggle.
     The [arXiv Dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv)
     is updated on a monthly basis.
+
+    This task assumes that the `~/.kaggle/kaggle.json` exists and
+    contains the required credentials.
     """
     logger = get_run_logger()
 
@@ -53,9 +59,12 @@ def download_dataset():
 
 
 @task
-def save_dataset_last_updated_to_block():
+def save_dataset_last_updated_to_block() -> None:
     """Retrieve the date of the last update for the dataset and
     store it into a Prefect Date Time storage block.
+
+    This task assumes that the `~/.kaggle/kaggle.json` file exists and
+    contains the required credentials.
     """
     logger = get_run_logger()
 
@@ -103,11 +112,100 @@ def save_dataset_last_updated_to_block():
 
 
 @task
-def prepare_jsonl_for_bigquery():
+def save_dataset_version_number_to_block() -> None:
+    """Retrieve the version number of the dataset and
+    store it into a Prefect JSON storage block.
+
+    This task assumes that the `~/.kaggle/kaggle.json` file exists and
+    contains the required credentials.
+    """
+    logger = get_run_logger()
+
+    # Create Kaggle client
+    api = KaggleApi()
+    api.authenticate()
+
+    datasets = api.datasets_list(search=KAGGLE_DATASET_NAME)
+
+    current_version_number = None
+
+    for dataset in datasets:
+        if dataset.get("ref") == KAGGLE_DATASET_NAME:
+            current_version_number = dataset.get("currentVersionNumber")
+            break
+
+    if current_version_number:
+        current_version_number = int(current_version_number)
+    else:
+        raise ValueError(f"The {KAGGLE_DATASET_NAME} dataset has no `current_version_number` field")
+
+    logger.info(f"The {KAGGLE_DATASET_NAME} dataset's version number is {current_version_number}")
+
+    block_version_number = JSON(value={"currentVersionNumber": current_version_number})
+    # With `overwrite=True` we overwrite the existing block
+    uuid = block_version_number.save(name=PREFECT_STORAGE_BLOCK_JSON, overwrite=True)
+
+    logger.info(f"The {PREFECT_STORAGE_BLOCK_JSON} JSON storage block has been created with UUID {uuid}")
+
+
+@task
+def prepare_jsonl_for_bigquery() -> None:
     """Process the downloaded metadata file so that it can be directly loaded
     into BigQuery. This [comment](https://www.kaggle.com/datasets/Cornell-University/arxiv/discussion/376149)
     explains why this additional processing is required.
-    """
+
+    The following is an example of a preprint metadata downloaded from Kaggle:
+
+    ```json
+    {
+        "id": "0704.0001",
+        "submitter": "Pavel Nadolsky",
+        "authors": "C. Bal\\'azs, E. L. Berger, P. M. Nadolsky, C.-P. Yuan",
+        "title": "Calculation of prompt diphoton production cross sections at Tevatron and\n  LHC energies",
+        "comments": "37 pages, 15 figures; published version",
+        "journal-ref": "Phys.Rev.D76:013009,2007",
+        "doi": "10.1103/PhysRevD.76.013009",
+        "report-no": "ANL-HEP-PR-07-12",
+        "categories": "hep-ph",
+        "license": null,
+        "abstract": "  A fully differential calculation in perturbative quantum chromodynamics is\npresented for the production of massive photon pairs at hadron colliders. All\nnext-to-leading order perturbative contributions from quark-antiquark,\ngluon-(anti)quark, and gluon-gluon subprocesses are included, as well as\nall-orders resummation of initial-state gluon radiation valid at\nnext-to-next-to-leading logarithmic accuracy. The region of phase space is\nspecified in which the calculation is most reliable. Good agreement is\ndemonstrated with data from the Fermilab Tevatron, and predictions are made for\nmore detailed tests with CDF and DO data. Predictions are shown for\ndistributions of diphoton pairs produced at the energy of the Large Hadron\nCollider (LHC). Distributions of the diphoton pairs from the decay of a Higgs\nboson are contrasted with those produced from QCD processes at the LHC, showing\nthat enhanced sensitivity to the signal can be obtained with judicious\nselection of events.\n",
+        "versions": [
+            {
+                "version": "v1",
+                "created": "Mon, 2 Apr 2007 19:18:42 GMT"
+            },
+            {
+                "version": "v2",
+                "created": "Tue, 24 Jul 2007 20:10:27 GMT"
+            }
+        ],
+        "update_date": "2008-11-26",
+        "authors_parsed": [
+            [
+                "Balázs",
+                "C.",
+                ""
+            ],
+            [
+                "Berger",
+                "E. L.",
+                ""
+            ],
+            [
+                "Nadolsky",
+                "P. M.",
+                ""
+            ],
+            [
+                "Yuan",
+                "C. -P.",
+                ""
+            ]
+        ]
+    }
+    ```
+
+    """  # noqa
     logger = get_run_logger()
 
     # BigQuery field names cannot contain `-`.
@@ -150,6 +248,9 @@ def prepare_jsonl_for_bigquery():
                         f'{author["first_name"]} {author["last_name"]} {author["other_name"]}'.strip()
                         for author in processed["authors_parsed"]
                     ]
+                elif k == "update_date":
+                    processed["update_date"] = parse(v).strftime(DATETIME_FORMAT)
+                    processed["update_date_ts"] = int(parse(v).timestamp())
                 else:
                     processed[k] = v
 
@@ -188,7 +289,7 @@ def copy_processed_file_to_bucket() -> str:
 
 
 @task
-def log_prefect_version(name: str):
+def log_prefect_version(name: str) -> None:
     """Simple logger which prints the Prefect version.
 
     Parameters
@@ -202,7 +303,7 @@ def log_prefect_version(name: str):
 
 
 @flow(task_runner=SequentialTaskRunner())
-def flow_get_arxiv_kaggle_dataset(name: str = "Filippo"):
+def flow_get_arxiv_kaggle_dataset(name: str = "Filippo") -> None:
     """Download from Kaggle, process, and copy the JSONL file to a GCS bucket.
 
     Parameters
@@ -211,9 +312,10 @@ def flow_get_arxiv_kaggle_dataset(name: str = "Filippo"):
         The name of a dude or dudette, by default "Filippo".
     """
     logger = get_run_logger()
-    # log_prefect_version(name)
-    # download_dataset()
+    log_prefect_version(name)
+    download_dataset()
     save_dataset_last_updated_to_block()
+    save_dataset_version_number_to_block()
     prepare_jsonl_for_bigquery()
     path = copy_processed_file_to_bucket()
     logger.info(f"The processed file has been stored at {path}")
