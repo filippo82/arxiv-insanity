@@ -14,7 +14,7 @@ kaggle
 #langchain @ git+https://github.com/hwchase17/langchain.git # installed in editable mode from a local GitHub repo
 lark
 openai
-optimum[onnxruntime]
+optimum[onnxruntime-gpu]
 paper-qa @ git+https://github.com/whitead/paper-qa.git
 
 # General
