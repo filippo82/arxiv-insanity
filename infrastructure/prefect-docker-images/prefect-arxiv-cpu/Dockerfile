@@ -1,4 +1,4 @@
-FROM prefecthq/prefect:2-python3.10
+FROM prefecthq/prefect:2-python3.11
 LABEL maintainer="Filippo Broggini <https://github.com/filippo82>"
 
 WORKDIR /opt/arxiv
