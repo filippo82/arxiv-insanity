@@ -1,4 +1,4 @@
--i https://download.pytorch.org/whl/cpu
+--extra-index https://download.pytorch.org/whl/cpu
 arxiv
 bokeh==2.4.3
 dask[dataframe,distributed]
@@ -22,8 +22,7 @@ requests
 sentence_transformers
 streamlit
 tiktoken
-torch==2.1.0  # macOS
-# torch==2.1.0+cpu  # Linux
+torch==2.1.0+cpu
 transformers
 ujson
 wheel
