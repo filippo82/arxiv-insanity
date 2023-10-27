@@ -1,40 +1,178 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from time import perf_counter
 
 import prefect
 import torch
+import torch.nn.functional as F
 import zarr
+from optimum.onnxruntime import ORTModelForFeatureExtraction
+from optimum.onnxruntime import ORTOptimizer
+from optimum.onnxruntime import ORTQuantizer
+from optimum.onnxruntime.configuration import AutoQuantizationConfig
+from optimum.onnxruntime.configuration import OptimizationConfig
 from prefect import flow
 from prefect import get_run_logger
 from prefect import task
 from prefect import variables
+from prefect.blocks.system import JSON
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
-from sentence_transformers import SentenceTransformer
+from torch import device
+from torch import Tensor
+from transformers import AutoTokenizer
+from transformers import PreTrainedTokenizerBase
 
-DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
-DATE_FORMAT = "%Y-%m-%d"
+# from typing import List
+# from typing import Union
+# from sentence_transformers import SentenceTransformer
+
+VERBOSE = False
+
+CONSTANTS = JSON.load("arxiv-block-json-constants").value
+
+PATH_TEMP = Path(CONSTANTS["PATH_TEMP"])
 
 env = variables.get("arxiv_env", "DEV")
 
 if env == "PROD":
-    FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed.jsonl"
-    FN_EMBEDDINGS = "kaggle-embeddings.zarr"  # This is actually a directory
-else:
-    FN_PROCESSED = "arxiv-metadata-oai-snapshot-processed-1000.jsonl"
-    FN_EMBEDDINGS = "kaggle-embeddings-1000.zarr"  # This is actually a directory
+    FN_PROCESSED = CONSTANTS["FN_PROCESSED"]
+    FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS"]
+elif env == "DEV":
+    FN_PROCESSED = CONSTANTS["FN_PROCESSED"].replace(".jsonl", "-1000.jsonl")
+    FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS"].replace(".zarr", "-1000.zarr")
 
-PREFECT_STORAGE_BLOCK_GCS_BUCKET = "arxiv-block-bucket-data"
+CATEGORIES_ACTIVE_CS_SUBSET = CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]
 
-# https://huggingface.co/sentence-transformers/allenai-specter
-# TRANSFORMERS_CHECKPOINT = "sentence-transformers/allenai-specter"
-# WORD_EMBEDDING_DIMENSION = 768
 # https://huggingface.co/intfloat/e5-small-v2
-TRANSFORMERS_CHECKPOINT = "intfloat/e5-small-v2"
+# MODEL_CHECKPOINT = "intfloat/e5-small-v2"
+# WORD_EMBEDDING_DIMENSION = 384
+# NORMALIZE_EMBEDDINGS = True
+# https://huggingface.co/BAAI/bge-small-en-v1.5
+MODEL_CHECKPOINT = "BAAI/bge-small-en-v1.5"
+MODEL_NAME = MODEL_CHECKPOINT.split("/")[-1]
 WORD_EMBEDDING_DIMENSION = 384
+NORMALIZE_EMBEDDINGS = True
 
-DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+class SentenceTransformersWithONNX:
+    def __init__(self, model, tokenizer, device: device = "cpu") -> None:
+        self.model = model
+        self.tokenizer: PreTrainedTokenizerBase = tokenizer
+        self.device: str = device
+
+        self.model = self.model.to(self.device)
+
+    # Copied from the model card: https://huggingface.co/intfloat/e5-small-v2
+    def average_pool(self, last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+        """_summary_
+
+        Parameters
+        ----------
+        last_hidden_states : Tensor
+            _description_
+        attention_mask : Tensor
+            _description_
+
+        Returns
+        -------
+        Tensor
+            _description_
+        """
+        last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+
+    def encode(
+        self,
+        batch_of_sentences: str | list[str],
+        batch_size: int = 1,
+        show_progress_bar: bool = False,
+        normalize_embeddings: bool = False,
+    ):
+        """_summary_
+
+        Parameters
+        ----------
+        batch_of_sentences : Union[str, List[str]]
+            _description_
+        batch_size : int, optional
+            _description_, by default 1
+        show_progress_bar : bool, optional
+            _description_, by default False
+        normalize_embeddings : bool, optional
+            _description_, by default False
+        """
+
+        # Tokenize the input texts and move the output to the right `DEVICE`
+        batch_dict = self.tokenizer(
+            batch_of_sentences,
+            max_length=512,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        ).to(self.device)
+
+        with torch.no_grad():
+            # Perform inference
+            outputs = self.model(**batch_dict)
+
+            # Perform pooling
+            embeddings = self.average_pool(outputs.last_hidden_state, batch_dict["attention_mask"])
+
+            # Normalize embeddings
+            if normalize_embeddings:
+                embeddings = F.normalize(embeddings, p=2, dim=1)
+
+        # Move output to `cpu` and convert to `numpy` before assigning to the `zarr` array
+        return embeddings.cpu().numpy()
+
+
+@task
+def create_onnx_model() -> None:
+    """Create ONNX model."""
+    logger = get_run_logger()
+    onnx_path = PATH_TEMP / f"{MODEL_NAME}-onnx"
+
+    model_onnx = ORTModelForFeatureExtraction.from_pretrained(MODEL_CHECKPOINT, export=True)
+    model_onnx.save_pretrained(onnx_path)
+
+    # Create ORTOptimizer and define optimization configuration
+    optimize_for_gpu = True if DEVICE == "cuda" else False
+    optimizer = ORTOptimizer.from_pretrained(model_onnx)
+    optimization_config = OptimizationConfig(
+        optimization_level=99,  # enable all optimizations
+        optimize_for_gpu=optimize_for_gpu,
+        # fp16=True,
+    )
+
+    # Apply the optimization configuration to the model
+    optimizer.optimize(
+        save_dir=onnx_path,
+        optimization_config=optimization_config,
+    )
+
+    model_optimized = ORTModelForFeatureExtraction.from_pretrained(
+        onnx_path,
+        file_name="model_optimized.onnx",
+    )
+
+    if DEVICE != "cuda":
+        # Create ORTQuantizer and define quantization configuration
+        quantizer = ORTQuantizer.from_pretrained(model_optimized)
+        quantization_config = AutoQuantizationConfig.avx2(is_static=False, per_channel=True)
+        quantizer.quantize(save_dir=onnx_path, quantization_config=quantization_config)
+        # model_quantized = ORTModelForFeatureExtraction.from_pretrained(
+        #     onnx_path,
+        #     file_name="model_optimized_quantized.onnx",
+        # )
+
+    logger.info("List created files:")
+    for file in PATH_TEMP.rglob("*"):
+        logger.info(file)
 
 
 @task
@@ -46,8 +184,11 @@ def download_processed_file_from_bucket() -> None:
     str
         URI of the processed file in the GCS bucket.
     """
-    gcp_cloud_storage_bucket_block = GcsBucket.load(PREFECT_STORAGE_BLOCK_GCS_BUCKET)
-    _ = gcp_cloud_storage_bucket_block.download_object_to_path(f"kaggle/{FN_PROCESSED}", FN_PROCESSED)
+    gcp_cloud_storage_bucket_block = GcsBucket.load(CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"])
+    _ = gcp_cloud_storage_bucket_block.download_object_to_path(
+        f"kaggle/{FN_PROCESSED}",
+        PATH_TEMP / FN_PROCESSED,
+    )
 
 
 @task
@@ -61,11 +202,31 @@ def compute_embeddings(transformers_batch_size: int) -> None:
     """
     logger = get_run_logger()
 
-    logger.info(f"The device is: {DEFAULT_DEVICE}")
+    logger.info(f"The device is: {DEVICE}")
 
-    model = SentenceTransformer(TRANSFORMERS_CHECKPOINT, device=DEFAULT_DEVICE)
+    onnx_path = PATH_TEMP / f"{MODEL_NAME}-onnx"
 
-    with open(FN_PROCESSED) as f:
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_CHECKPOINT)
+
+    if DEVICE == "cpu":
+        # Optimized model
+        onnx_model = ORTModelForFeatureExtraction.from_pretrained(
+            onnx_path,
+            file_name="model_optimized_quantized.onnx",
+            use_io_binding=True,
+        )
+        model = SentenceTransformersWithONNX(model=onnx_model, tokenizer=tokenizer, device=DEVICE)
+        # Normal model
+        # model = SentenceTransformer(MODEL_CHECKPOINT, device=DEVICE)
+    elif DEVICE == "cuda":
+        model = ORTModelForFeatureExtraction.from_pretrained(
+            onnx_path,
+            file_name="model_optimized.onnx",
+            use_io_binding=True,
+        ).to(DEVICE)
+
+    with open(PATH_TEMP / FN_PROCESSED) as f:
         line_offset = []
         offset = 0
         for line in f:
@@ -77,10 +238,13 @@ def compute_embeddings(transformers_batch_size: int) -> None:
 
     # Empirical values for batch/chunk sizes
     zarr_chunk_size = 384
-    number_of_batches_to_process = zarr_chunk_size * 1
+    # number_of_batches_to_process = zarr_chunk_size * 1
+    number_of_batches_to_process = 1
 
-    store = zarr.DirectoryStore(FN_EMBEDDINGS)
+    store = zarr.DirectoryStore(PATH_TEMP / FN_EMBEDDINGS)
 
+    # The final shape of the `zarr` array will be:
+    # (num_articles, WORD_EMBEDDING_DIMENSION)
     z = zarr.open(
         store=store,
         mode="w",
@@ -94,31 +258,37 @@ def compute_embeddings(transformers_batch_size: int) -> None:
     # line_start = 0
 
     logger.info("Start processing JSONL file")
-    with open(FN_PROCESSED) as f:
+    with open(PATH_TEMP / FN_PROCESSED) as f:
         cnt = 1
         cnt_batch = 1
         batch = []
+        start_time = perf_counter()
         for line in f:
+            categories = json.loads(line).get("categories", [])
+            if set(categories).isdisjoint(CATEGORIES_ACTIVE_CS_SUBSET):
+                if VERBOSE:
+                    logger.info(f"Skipping article with categories: {' '.join(categories)}")
+                continue
             abstract = json.loads(line).get("abstract", "")
-            if TRANSFORMERS_CHECKPOINT == "intfloat/e5-small-v2":
+            if MODEL_CHECKPOINT == "intfloat/e5-small-v2":
                 abstract = f"passage: {abstract}"
             batch.append(abstract)
             if cnt % (transformers_batch_size * number_of_batches_to_process) == 0:
                 logger.info(f"Number of articles processed so far: {cnt}")
                 logger.info(f"Number of batches processed so far: {cnt_batch}")
                 logger.info(f"Number of articles in the current batch: {len(batch)}")
-                normalize_embeddings = True if TRANSFORMERS_CHECKPOINT == "intfloat/e5-small-v2" else False
 
                 embeddings = model.encode(
                     batch,
                     batch_size=transformers_batch_size,
                     show_progress_bar=True,
-                    normalize_embeddings=normalize_embeddings,  # Required by `intfloat/e5-small-v2`
+                    normalize_embeddings=NORMALIZE_EMBEDDINGS,
                 )
 
+                # The shape of `embeddings` is:
+                # (num_articles_in_the_batch, WORD_EMBEDDING_DIMENSION)
                 logger.info(f"The shape of the emebddings is: {embeddings.shape}")
 
-                # embeddings = np.zeros([32, 768])
                 batch = []
                 start = (cnt_batch - 1) * (transformers_batch_size * number_of_batches_to_process)
                 end = cnt_batch * (transformers_batch_size * number_of_batches_to_process)
@@ -133,11 +303,19 @@ def compute_embeddings(transformers_batch_size: int) -> None:
                     f"batches of {transformers_batch_size} articles each "
                     f"for a total of {cnt:7d} articles.",
                 )
+                latency = perf_counter() - start_time
+                logger.info(f"latency: {latency:.2f}")
+                start_time = perf_counter()
 
             cnt += 1
 
         if batch:
-            embeddings = model.encode(batch, batch_size=transformers_batch_size, show_progress_bar=True)
+            embeddings = model.encode(
+                batch,
+                batch_size=transformers_batch_size,
+                show_progress_bar=True,
+                normalize_embeddings=NORMALIZE_EMBEDDINGS,
+            )
             start = (cnt_batch - 1) * (transformers_batch_size * number_of_batches_to_process)
             z[start:] = embeddings
 
@@ -159,9 +337,9 @@ def copy_zarr_directory_to_bucket() -> str:
     str
         URI of the zrr file in the GCS bucket.
     """
-    gcp_cloud_storage_bucket_block = GcsBucket.load(PREFECT_STORAGE_BLOCK_GCS_BUCKET)
+    gcp_cloud_storage_bucket_block = GcsBucket.load(CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"])
     path = gcp_cloud_storage_bucket_block.upload_from_folder(
-        from_folder=FN_EMBEDDINGS,
+        from_folder=PATH_TEMP / FN_EMBEDDINGS,
         to_folder=f"kaggle/{FN_EMBEDDINGS}",
     )
     return path
@@ -182,7 +360,7 @@ def log_prefect_version(name: str) -> None:
 
 
 @flow(task_runner=SequentialTaskRunner())
-def flow_compute_embeddings_for_kaggle_dataset(name: str = "Filippo", transformers_batch_size: int = 384):
+def flow_compute_embeddings_for_kaggle_dataset(name: str = "Filippo", transformers_batch_size: int = 192):
     """Download from Kaggle, process, and copy the JSONL file to a GCS bucket.
 
     Parameters
@@ -192,6 +370,7 @@ def flow_compute_embeddings_for_kaggle_dataset(name: str = "Filippo", transforme
     """
     logger = get_run_logger()
     log_prefect_version(name)
+    create_onnx_model()
     download_processed_file_from_bucket()
     compute_embeddings(transformers_batch_size)
     path = copy_zarr_directory_to_bucket()
@@ -200,4 +379,5 @@ def flow_compute_embeddings_for_kaggle_dataset(name: str = "Filippo", transforme
 
 if __name__ == "__main__":
     name = "Filippo is in da house"
-    flow_compute_embeddings_for_kaggle_dataset(name)
+    transformers_batch_size: int = 48
+    flow_compute_embeddings_for_kaggle_dataset(name, transformers_batch_size)

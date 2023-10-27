@@ -44,7 +44,7 @@ def download_dataset() -> None:
     The [arXiv Dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv)
     is updated on a monthly basis.
 
-    This task assumes that the `~/.kaggle/kaggle.json` exists and
+    This task assumes that the `~/.kaggle/kaggle.json` file exists and
     contains the required credentials.
     """
     logger = get_run_logger()
@@ -83,7 +83,6 @@ def save_dataset_last_updated_to_block() -> None:
 
     if last_updated:
         last_updated_parsed = parse(last_updated).astimezone(UTC)
-        # last_updated_formatted = last_updated_parsed.date().strftime(DATETIME_FORMAT)
     else:
         raise ValueError(f"The {KAGGLE_DATASET_NAME} dataset has no `lastUpdated` field")
 

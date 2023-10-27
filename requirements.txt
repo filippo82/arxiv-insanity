@@ -1,40 +1,29 @@
-
-# Deep learning
---extra-index-url https://download.pytorch.org/whl/cpu
-# Dataset
+-i https://download.pytorch.org/whl/cpu
 arxiv
 bokeh==2.4.3
 dask[dataframe,distributed]
+datasets @ git+https://github.com/huggingface/datasets.git
 evaluate
-
-# NLP
 fitz # This is needed by chatpaper
 gcsfs
+ipywidgets
 kaggle
-#langchain @ git+https://github.com/hwchase17/langchain.git # installed in editable mode from a local GitHub repo
+# langchain @ git+https://github.com/hwchase17/langchain.git  # installed in editable mode from a local GitHub repo
+langchain
 lark
 openai
 optimum[onnxruntime]
-paper-qa @ git+https://github.com/whitead/paper-qa.git
-
-# General
+# paper-qa @ git+https://github.com/whitead/paper-qa.git
 pip
-
-# Data engineering
 prefect-gcp[cloud_storage,bigquery,secret_manager]
-
-# TBD
-pydantic >= 1.10.0, < 2.0.0
-
-# Search
+pydantic
 pyvespa @ git+https://github.com/vespa-engine/pyvespa.git
 requests
 sentence_transformers
-
-# App
 streamlit
 tiktoken
-torch==2.0.1+cpu
+torch==2.1.0  # macOS
+# torch==2.1.0+cpu  # Linux
 transformers
 ujson
 wheel

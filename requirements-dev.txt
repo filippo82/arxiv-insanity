@@ -1,8 +1,9 @@
 black
 flake8
-jedi-language-server == 0.40.0
 
 # Development
+ipython
+jedi-language-server == 0.40.0
 jupyterlab
 mypy
 pre-commit
