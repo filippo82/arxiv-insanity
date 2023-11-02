@@ -29,6 +29,9 @@ from transformers import PreTrainedTokenizerBase
 # from typing import Union
 # from sentence_transformers import SentenceTransformer
 
+# torch.set_num_interop_threads(4)  # Inter-op parallelism
+# torch.set_num_threads(4)  # Intra-op parallelism
+
 VERBOSE = False
 
 CONSTANTS = JSON.load("arxiv-block-json-constants").value
@@ -164,6 +167,7 @@ def create_onnx_model() -> None:
         # Create ORTQuantizer and define quantization configuration
         quantizer = ORTQuantizer.from_pretrained(model_optimized)
         quantization_config = AutoQuantizationConfig.avx2(is_static=False, per_channel=True)
+        # quantization_config = AutoQuantizationConfig.avx512_vnni(is_static=False, per_channel=True)
         quantizer.quantize(save_dir=onnx_path, quantization_config=quantization_config)
         # model_quantized = ORTModelForFeatureExtraction.from_pretrained(
         #     onnx_path,
@@ -237,7 +241,7 @@ def compute_embeddings(transformers_batch_size: int) -> None:
     logger.info(f"The JSONL file contains a total of {num_articles:7d} articles")
 
     # Empirical values for batch/chunk sizes
-    zarr_chunk_size = 384
+    zarr_chunk_size = WORD_EMBEDDING_DIMENSION * 2
     # number_of_batches_to_process = zarr_chunk_size * 1
     number_of_batches_to_process = 1
 
@@ -316,13 +320,18 @@ def compute_embeddings(transformers_batch_size: int) -> None:
                 show_progress_bar=True,
                 normalize_embeddings=NORMALIZE_EMBEDDINGS,
             )
+            logger.info(f"The shape of the emebddings is: {embeddings.shape}")
+
             start = (cnt_batch - 1) * (transformers_batch_size * number_of_batches_to_process)
-            z[start:] = embeddings
+            end = start + len(batch)
+            logger.info(f"{start}:{end}")
+            z[start:end] = embeddings
 
             cnt_batch += 1
 
-        logger.info(f"Processed a total of {cnt:7d} articles")
+        logger.info(f"Processed a total of {end:7d} articles")
 
+        z.resize(end, WORD_EMBEDDING_DIMENSION)
         zarr.consolidate_metadata(store)
 
         logger.info("Consolidated zarr store")
@@ -380,4 +389,4 @@ def flow_compute_embeddings_for_kaggle_dataset(name: str = "Filippo", transforme
 if __name__ == "__main__":
     name = "Filippo is in da house"
     transformers_batch_size: int = 48
-    flow_compute_embeddings_for_kaggle_dataset(name, transformers_batch_size)
+    flow_compute_embeddings_for_kaggle_dataset(name=name, transformers_batch_size=transformers_batch_size)

@@ -13,23 +13,25 @@ from prefect import flow
 from prefect import get_run_logger
 from prefect import task
 from prefect.blocks.system import DateTime
+from prefect.blocks.system import JSON
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
 from requests import Session
 from requests.exceptions import HTTPError
 
-DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
-DATE_FORMAT = "%Y-%m-%d"
+VERBOSE = False
+
+CONSTANTS = JSON.load("arxiv-block-json-constants").value
 
 MAX_RESULTS = 1000
 
 ARXIV_API_BASE_URL = "http://export.arxiv.org/api/query?"
 
-TODAY = datetime.today().strftime(DATE_FORMAT)
-FN_PROCESSED = f"arxiv-metadata-from-arxiv-api-processed-{TODAY}.jsonl"
+TODAY = datetime.today().strftime(CONSTANTS["DATE_FORMAT"])
 
-PREFECT_STORAGE_BLOCK_GCS_BUCKET = "arxiv-block-bucket-data"
-PREFECT_STORAGE_BLOCK_DATETIME = "arxiv-block-datetime-data-last-updated"
+FN_PROCESSED = CONSTANTS["FN_PROCESSED_API"].format(TODAY)
+
+CATEGORIES_ACTIVE_CS_SUBSET = CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]
 
 
 @task
@@ -44,7 +46,7 @@ def load_dataset_last_updated_from_block() -> datetime:
     """
     logger = get_run_logger()
 
-    block_last_updated = DateTime.load(name=PREFECT_STORAGE_BLOCK_DATETIME)
+    block_last_updated = DateTime.load(name=CONSTANTS["PREFECT_STORAGE_BLOCK_DATETIME"])
 
     last_updated = block_last_updated.value
 
@@ -117,6 +119,11 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
             is_last_updated_set = False
             # Batch of MAX_RESULTS entries
             for entry in entries:
+                categories = [category["term"] for category in entry.get("tags", [])]
+                if set(categories).isdisjoint(CATEGORIES_ACTIVE_CS_SUBSET):
+                    if VERBOSE:
+                        logger.info(f"Skipping article with categories: {' '.join(categories)}")
+                    continue
                 arxiv_id = entry.get("id").split("/")[-1]
                 version = arxiv_id[-2:]
 
@@ -130,7 +137,7 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
                     "journal_ref": entry.get("journal_ref", None),
                     "doi": None,
                     "report_no": None,
-                    "categories": [category["term"] for category in entry.get("tags", [])],
+                    "categories": categories,
                     "license": None,
                     "abstract": entry.get("summary", None),
                     # NOTE: the way I build `versions` is most likely not accurate.
@@ -141,7 +148,7 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
                             "created": entry.get("published", None),
                         },
                     ],
-                    "update_date": parse(entry.get("updated", TODAY)).strftime(DATETIME_FORMAT),
+                    "update_date": parse(entry.get("updated", TODAY)).strftime(CONSTANTS["DATETIME_FORMAT"]),
                     "update_date_ts": int(parse(entry.get("updated", TODAY)).timestamp()),
                     # Add origin
                     "origin": "arxiv_api",
@@ -189,7 +196,7 @@ def copy_processed_file_to_bucket() -> str:
     str
         URI of the processed file in the GCS bucket.
     """
-    gcp_cloud_storage_bucket_block = GcsBucket.load(PREFECT_STORAGE_BLOCK_GCS_BUCKET)
+    gcp_cloud_storage_bucket_block = GcsBucket.load(CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"])
     path = gcp_cloud_storage_bucket_block.upload_from_path(FN_PROCESSED, f"arxiv-api/{FN_PROCESSED}")
     return path
 
@@ -209,7 +216,7 @@ def save_dataset_last_updated_to_block() -> datetime:
 
     block_last_updated = DateTime(value=last_updated_formatted_with_tz)
     # With `overwrite=True` we overwrite the existing block
-    _ = block_last_updated.save(name=PREFECT_STORAGE_BLOCK_DATETIME, overwrite=True)
+    _ = block_last_updated.save(name=CONSTANTS["PREFECT_STORAGE_BLOCK_DATETIME"], overwrite=True)
 
     return last_updated_formatted_with_tz
 
