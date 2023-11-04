@@ -1,3 +1,6 @@
 [submodule "search/pyvespa"]
 	path = search/pyvespa
-	url = https://github.com/vespa-engine/pyvespa.git
+	url = git@github.com:filippo82/pyvespa.git
+[submodule "search/sample-apps"]
+	path = search/sample-apps
+	url = git@github.com:filippo82/sample-apps.git
