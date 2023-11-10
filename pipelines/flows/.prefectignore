@@ -1,5 +1,13 @@
+# arXiv
+testing/
+data/
+*.jsonl
+
 # prefect artifacts
 .prefectignore
+.prefect/
+prefect.yaml
+temp/
 
 # python artifacts
 __pycache__/
@@ -7,6 +15,9 @@ __pycache__/
 *$py.class
 *.egg-info/
 *.egg
+
+# Linting and formatting artifacts
+.ruff_cache/
 
 # Type checking artifacts
 .mypy_cache/
