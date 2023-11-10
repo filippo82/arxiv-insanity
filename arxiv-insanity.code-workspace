@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../filippo82.github.io"
+		},
+		{
+			"path": "../docker-images"
+		},
+		{
+			"path": "../vespa-playground"
+		}
+	],
+	"settings": {
+		"ruff.interpreter": [
+			"/Users/filippo/.pyenv/versions/arxiv-3.11.4/bin/python"
+		],
+		"ruff.format.args": [
+			"--line-length",
+			"120"
+		]
+	}
+}
