@@ -4,6 +4,7 @@ kaggle
 optimum[onnxruntime]
 prefect-gcp[cloud_storage,bigquery,secret_manager]
 python-dateutil
+pyvespa
 requests
 sentence_transformers
 zarr

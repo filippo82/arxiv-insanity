@@ -1,0 +1,44 @@
+# Welcome to your prefect.yaml file! You can use this file for storing and managing
+# configuration for deploying your flows. We recommend committing this file to source
+# control along with your flow code.
+
+# Generic metadata about this project
+name: feed_arxiv_dataset_to_vespa
+prefect-version: 2.13.8
+
+# build section allows you to manage and build docker images
+build: null
+
+# push section allows you to manage if and how this project is uploaded to remote locations
+push:
+- prefect_gcp.deployments.steps.push_to_gcs:
+    bucket: arxiv-insanity
+    folder: pipelines
+    credentials: '{{ prefect.blocks.gcp-credentials.gcp-credentials }}'
+
+# pull section allows you to provide instructions for cloning this project in remote locations
+pull:
+- prefect_gcp.deployments.steps.pull_from_gcs:
+    bucket: arxiv-insanity
+    folder: pipelines
+    credentials: '{{ prefect.blocks.gcp-credentials.gcp-credentials }}'
+
+# the deployments section allows you to provide configuration for deploying flows
+deployments:
+- name: feed_arxiv_dataset_to_vespa
+  version: null
+  tags: []
+  description: |-
+    Feed data to Vespa.
+
+    Parameters
+    ----------
+    name : str, optional
+        The name of a dude or dudette, by default "Filippo".
+  entrypoint: feed_arxiv_dataset_to_vespa.py:feed_data_and_embeddings_to_vespa
+  parameters: {}
+  work_pool:
+    name: arxiv-pool-gcp-cloud-run-push-normal
+    work_queue_name: null
+    job_variables: {}
+  schedule: null
