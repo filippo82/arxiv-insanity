@@ -1,17 +1,18 @@
-# coloredlogs  # optimum
-# datasets  # optimum
+--extra-index-url https://download.pytorch.org/whl/cpu
+coloredlogs  # optimum
+datasets  # optimum
 feedparser
 gcsfs
-# huggingface_hub  # optimum
+huggingface_hub  # optimum
 kaggle
-# numpy  # optimum
-optimum[onnxruntime]
-# packaging  # optimum
+numpy  # optimum
+packaging  # optimum
 prefect-gcp[cloud_storage,bigquery,secret_manager]
 python-dateutil
 pyvespa
 requests
 # sentence_transformers
-# sympy  # optimum
+sympy  # optimum
+torch==2.1.0+cpu
 transformers[sentencepiece,torch]  # optimum
 zarr
