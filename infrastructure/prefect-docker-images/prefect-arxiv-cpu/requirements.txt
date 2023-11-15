@@ -1,16 +1,17 @@
-coloredlogs  # optimum
-datasets  # optimum
+# coloredlogs  # optimum
+# datasets  # optimum
 feedparser
 gcsfs
-huggingface_hub  # optimum
+# huggingface_hub  # optimum
 kaggle
-numpy  # optimum
-packaging  # optimum
+# numpy  # optimum
+optimum[onnxruntime]
+# packaging  # optimum
 prefect-gcp[cloud_storage,bigquery,secret_manager]
 python-dateutil
 pyvespa
 requests
-sentence_transformers
-sympy  # optimum
+# sentence_transformers
+# sympy  # optimum
 transformers[sentencepiece,torch]  # optimum
 zarr

@@ -13,6 +13,6 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir --requirement requirements.txt
 
-COPY requirements-optimum.txt .
+# COPY requirements-optimum.txt .
 
-RUN pip install --no-cache-dir --requirement requirements-optimum.txt --no-deps
+# RUN pip install --no-cache-dir --requirement requirements-optimum.txt --no-deps
