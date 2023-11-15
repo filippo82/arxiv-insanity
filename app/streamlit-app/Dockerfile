@@ -1,12 +1,9 @@
 FROM python:3.11.4-slim
+LABEL maintainer="Filippo Broggini <https://github.com/filippo82>"
 
 WORKDIR /work
 
-RUN pip install --upgrade pip
-
-COPY requirements-torch-cpu.txt /tmp/requirements-torch-cpu.txt
-
-RUN pip install --no-cache-dir --requirement /tmp/requirements-torch-cpu.txt --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --upgrade pip wheel
 
 COPY requirements.txt /tmp/requirements.txt
 
