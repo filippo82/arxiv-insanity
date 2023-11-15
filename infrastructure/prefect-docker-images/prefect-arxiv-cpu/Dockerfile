@@ -12,3 +12,7 @@ RUN pip install --no-cache-dir --requirement requirements-torch-cpu.txt --index-
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --requirement requirements.txt
+
+COPY requirements-optimum.txt .
+
+RUN pip install --no-cache-dir --requirement requirements-optimum.txt --no-deps
