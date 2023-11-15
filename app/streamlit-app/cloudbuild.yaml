@@ -1,0 +1,22 @@
+steps:
+# Debugging
+- name: 'alpine'
+  args: ['echo', "hello ${_IMAGE_NAME_FULL}"]
+# Uses the docker build step to build an image
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ "build", "-t", "${_IMAGE_NAME_FULL}:${_TAG}", "-t", "${_IMAGE_NAME_FULL}:latest", "." ]
+  dir: "app/streamlit-app"
+
+# Push the image to Container Registry
+images:
+- '${_IMAGE_NAME_FULL}:${_TAG}'
+- '${_IMAGE_NAME_FULL}:latest'
+
+substitutions:
+    _LOCATION: "us-central1"
+    _GCLOUD_ARTIFACTS_REPOSITORY: 'prefect'
+    _IMAGE_NAME: 'streamlit-app'
+    _TAG: "${COMMIT_SHA}"
+    _IMAGE_NAME_FULL: '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_GCLOUD_ARTIFACTS_REPOSITORY}/${_IMAGE_NAME}'
+options:
+    dynamic_substitutions: true

@@ -1,0 +1,3 @@
+pyvespa # @ git+https://github.com/vespa-engine/pyvespa.git
+sentence_transformers
+streamlit
