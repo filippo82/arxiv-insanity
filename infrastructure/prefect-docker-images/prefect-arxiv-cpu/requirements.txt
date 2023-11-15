@@ -12,5 +12,5 @@ pyvespa
 requests
 sentence_transformers
 sympy  # optimum
-transformers[sentencepiece]  # optimum
+transformers[sentencepiece,torch]  # optimum
 zarr
