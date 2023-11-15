@@ -6,6 +6,13 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: [ "build", "-t", "${_IMAGE_NAME_FULL}:${_TAG}", "-t", "${_IMAGE_NAME_FULL}:latest", "." ]
   dir: "app/streamlit-app"
+# Push the container image to Container Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', "${_IMAGE_NAME_FULL}:latest"]
+# Deploy container image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: ["run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}"]
 
 # Push the image to Container Registry
 images:
@@ -20,3 +27,5 @@ substitutions:
     _IMAGE_NAME_FULL: '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_GCLOUD_ARTIFACTS_REPOSITORY}/${_IMAGE_NAME}'
 options:
     dynamic_substitutions: true
+
+# https://github.com/GoogleCloudPlatform/cloud-build-samples/blob/main/run-example-builddeploy/cloudbuild.yaml
