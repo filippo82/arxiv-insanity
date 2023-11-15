@@ -1,7 +1,6 @@
 feedparser
 gcsfs
 kaggle
-onnxruntime
 optimum[onnxruntime]
 prefect-gcp[cloud_storage,bigquery,secret_manager]
 python-dateutil
