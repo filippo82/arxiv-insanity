@@ -12,7 +12,7 @@ steps:
 # Deploy container image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
-  args: ["run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}"]
+  args: ["run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}", "--set-env-vars", "VESPA_ENDPOINT=http://34.41.66.135:80", "--allow-unauthenticated", "--memory", "4Gi"]
 
 # Push the image to Container Registry
 images:
