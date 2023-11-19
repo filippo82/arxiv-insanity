@@ -20,18 +20,13 @@ from requests import Session
 from requests.exceptions import HTTPError
 
 VERBOSE = False
-
 CONSTANTS = JSON.load("arxiv-block-json-constants").value
-
 MAX_RESULTS = 1000
-
+PAGINATION_START_MAX = 100
 ARXIV_API_BASE_URL = "http://export.arxiv.org/api/query?"
-
 TODAY = datetime.today().strftime(CONSTANTS["DATE_FORMAT"])
-
 FN_PROCESSED = CONSTANTS["FN_PROCESSED_API"].format(TODAY)
-
-CATEGORIES_ACTIVE_CS_SUBSET = CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]
+ARXIV_CATEGORIES_SUBSET = CONSTANTS["ARXIV_CATEGORIES_ACTIVE_CS_SUBSET"]
 
 
 @task
@@ -47,12 +42,9 @@ def load_dataset_last_updated_from_block() -> datetime:
     logger = get_run_logger()
 
     block_last_updated = DateTime.load(name=CONSTANTS["PREFECT_STORAGE_BLOCK_DATETIME"])
-
     last_updated = block_last_updated.value
 
-    logger.info(
-        f"The most recent article from arXiv has been last updated on {last_updated}",
-    )
+    logger.info(f"The most recent article from arXiv has been last updated on {last_updated}.")
 
     last_updated_minus_time_delta = last_updated - timedelta(hours=3)
 
@@ -65,8 +57,8 @@ def load_dataset_last_updated_from_block() -> datetime:
 
 
 @task
-def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
-    """_summary_
+def make_get_request(last_updated_date_from_block: datetime, query: str, verbose: bool) -> int:
+    """Retrieve metadata from arXiv APIs
 
     From https://info.arxiv.org/help/api/user-manual.html#3311-title-id-link-and-updated:
 
@@ -81,7 +73,7 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
     Parameters
     ----------
     last_updated_date : datetime
-        _description_
+        Date of last update of the dataset
 
     query : str
         Query
@@ -89,7 +81,7 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
     Returns
     -------
     int
-        Total number of articles retrieved from the arXiv API.
+        Total number of articles retrieved from the arXiv API
     """
     logger = get_run_logger()
 
@@ -108,19 +100,21 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
         try:
             res.raise_for_status()
         except HTTPError as e:
-            logger.error(f"ADD ERROR MESSAGE! {e}")
+            logger.error(f"Something went wrong: {e}")
 
         time.sleep(1.0)
 
         articles = []
         res_parsed = feedparser.parse(res.text)
         entries = res_parsed.get("entries", [])
+        # Check if the request returned MAX_RESULTS articles.
+        # If not, we try again.
         if len(entries) == MAX_RESULTS:
             is_last_updated_set = False
             # Batch of MAX_RESULTS entries
             for entry in entries:
                 categories = [category["term"] for category in entry.get("tags", [])]
-                if set(categories).isdisjoint(CATEGORIES_ACTIVE_CS_SUBSET):
+                if set(categories).isdisjoint(ARXIV_CATEGORIES_SUBSET):
                     if VERBOSE:
                         logger.info(f"Skipping article with categories: {' '.join(categories)}")
                     continue
@@ -171,17 +165,15 @@ def make_get_request(last_updated_date_from_block: datetime, query: str) -> int:
             cnt += MAX_RESULTS
             pagination_start += 1
 
-            logger.info(
-                f"I will keep going till {last_updated} is older than {last_updated_date_from_block}.",
-            )
+            logger.info(f"I will keep going till {last_updated} is older than {last_updated_date_from_block}.")
             if last_updated < last_updated_date_from_block:
                 break
         else:
-            logger.info(f"The request did not return {MAX_RESULTS} entries. We need to wait and try again.")
+            logger.info(f"The request did not return {MAX_RESULTS} entries. We wait 10 seconds and try again.")
             time.sleep(10.0)
 
-        if pagination_start > 100:
-            logger.info(f"We stop anyway after making 100 requests of {MAX_RESULTS} entries each.")
+        if pagination_start > PAGINATION_START_MAX:
+            logger.info(f"We stop anyway after making {PAGINATION_START_MAX} requests of {MAX_RESULTS} entries each.")
             break
 
     return cnt
@@ -236,29 +228,28 @@ def log_prefect_version(name: str) -> None:
 
 
 @flow(task_runner=SequentialTaskRunner())
-def flow_get_metadata_from_arxiv_api(name: str = "Filippo", query: str = "cat:cs.*"):
+def flow_get_metadata_from_arxiv_api(name: str = "Adam", query: str = "cat:cs.*", verbose: bool = False) -> None:
     """Get articles metadata from arXiv API, create a JSONL file, and copy it to a GCS bucket.
 
     Parameters
     ----------
     name : str, optional
-        The name of a dude or dudette, by default "Filippo".
+        The name of a dude or dudette, by default "Adam"
+    query : str, optional
+        Search query for the arXiv APIs, by default "cat:cs.*"
+    verbose : bool, optional
+        Verbose output, by default False
     """
     logger = get_run_logger()
     log_prefect_version(name)
     last_updated_date = load_dataset_last_updated_from_block()
-    total_number_of_articles = make_get_request(last_updated_date, query)
+    total_number_of_articles = make_get_request(last_updated_date, query, verbose)
     path = copy_processed_file_to_bucket()
     last_updated_date = save_dataset_last_updated_to_block()
-    logger.info(
-        f"The metadata for {total_number_of_articles} articles have been retrieved from the arXiv API.",
-    )
-    logger.info(
-        f"The most recent article from the arXiv API has been last updated on {last_updated_date}",
-    )
+    logger.info(f"The metadata for {total_number_of_articles} articles have been retrieved from the arXiv API.")
+    logger.info(f"The most recent article from the arXiv API has been last updated on {last_updated_date}")
     logger.info(f"The processed file has been stored at {path}")
 
 
 if __name__ == "__main__":
-    name = "Filippo is in da house"
-    flow_get_metadata_from_arxiv_api(name)
+    flow_get_metadata_from_arxiv_api()

@@ -1,0 +1,53 @@
+# Welcome to your prefect.yaml file! You can use this file for storing and managing
+# configuration for deploying your flows. We recommend committing this file to source
+# control along with your flow code.
+
+# Generic metadata about this project
+name: get_metadata_from_arxiv_api
+prefect-version: 2.14.5
+
+# build section allows you to manage and build docker images
+build: null
+
+# push section allows you to manage if and how this project is uploaded to remote locations
+push:
+- prefect_gcp.deployments.steps.push_to_gcs:
+    bucket: arxiv-insanity
+    folder: pipelines
+    credentials: '{{ prefect.blocks.gcp-credentials.arxiv-block-gcp-credentials-gcloud
+      }}'
+
+# pull section allows you to provide instructions for cloning this project in remote locations
+pull:
+- prefect_gcp.deployments.steps.pull_from_gcs:
+    bucket: arxiv-insanity
+    folder: pipelines
+    credentials: '{{ prefect.blocks.gcp-credentials.arxiv-block-gcp-credentials-gcloud
+      }}'
+
+# the deployments section allows you to provide configuration for deploying flows
+deployments:
+- name: get_metadata_from_arxiv_api
+  version: null
+  tags: []
+  description: |-
+    Get articles metadata from arXiv API, create a JSONL file, and copy it to a GCS bucket.
+
+    Parameters
+    ----------
+    name : str, optional
+        The name of a dude or dudette, by default "Adam"
+    query : str, optional
+        Search query for the arXiv APIs, by default "cat:cs.*"
+    verbose : bool, optional
+        Verbose output, by default False
+  entrypoint: get_metadata_from_arxiv_api.py:flow_get_metadata_from_arxiv_api
+  parameters: {}
+  work_pool:
+    name: arxiv-pool-gcp-cloud-run-push-normal
+    work_queue_name: null
+    job_variables: {}
+  schedule:
+    cron: 30 21 * * *
+    timezone: null
+    day_or: true
