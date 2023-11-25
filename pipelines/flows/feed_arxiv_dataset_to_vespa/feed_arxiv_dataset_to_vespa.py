@@ -29,9 +29,7 @@ FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS_API"].format(
     TODAY,
 )  # This is actually a directory
 
-CATEGORIES_ACTIVE_CS_SUBSET = {
-    category.lower() for category in CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]
-}
+ARXIV_CATEGORIES_SUBSET = {category.lower() for category in CONSTANTS["ARXIV_CATEGORIES_ACTIVE_CS_SUBSET"]}
 
 WORD_EMBEDDING_DIMENSION = 384
 ZARR_CHUNK_SIZE = WORD_EMBEDDING_DIMENSION * 2
@@ -113,7 +111,7 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
             if cnt >= restart_from:
                 article = json.loads(line)
                 # logger.info(f"cnt:{cnt}")
-                if CATEGORIES_ACTIVE_CS_SUBSET.isdisjoint(
+                if ARXIV_CATEGORIES_SUBSET.isdisjoint(
                     [category.lower() for category in article["categories"]],
                 ):
                     # logger.info(f"Skipping article {article['id']} with categories {article['categories']}")
@@ -150,9 +148,7 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
                         # logger.info(
                         #     f"Read embeddings from {cnt_to_ingest:7d}:{cnt_to_ingest + batch_size_zarr_to_read:7d}"
                         # )
-                        batch_embeddings = z[
-                            cnt_to_ingest : cnt_to_ingest + batch_size_zarr_to_read
-                        ]
+                        batch_embeddings = z[cnt_to_ingest : cnt_to_ingest + batch_size_zarr_to_read]
                         cnt_embedding = 0
 
                     if cnt_to_ingest % (batch_size_vespa_feed * 10) == 0:

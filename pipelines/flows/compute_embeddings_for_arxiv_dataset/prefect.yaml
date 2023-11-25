@@ -3,7 +3,7 @@
 # control along with your flow code.
 
 # Generic metadata about this project
-name: get_metadata_from_arxiv_api
+name: compute_embeddings_for_arxiv_dataset
 prefect-version: 2.14.5
 
 # build section allows you to manage and build docker images
@@ -25,27 +25,20 @@ pull:
 
 # the deployments section allows you to provide configuration for deploying flows
 deployments:
-- name: get_metadata_from_arxiv_api
+- name: compute_embeddings_for_arxiv_dataset
   version: "0.2.0"
   tags: []
   description: |-
-    Get articles metadata from arXiv API, create a JSONL file, and copy it to a GCS bucket.
+    Download from Kaggle, process, and copy the JSONL file to a GCS bucket.
 
     Parameters
     ----------
     name : str, optional
-        The name of a dude or dudette, by default "Adam"
-    query : str, optional
-        Search query for the arXiv APIs, by default "cat:cs.*"
-    verbose : bool, optional
-        Verbose output, by default False
-  entrypoint: get_metadata_from_arxiv_api.py:flow_get_metadata_from_arxiv_api
+        The name of a dude or dudette, by default "Filippo".
+  entrypoint: compute_embeddings_for_arxiv_dataset.py:flow_compute_embeddings_for_arxiv_dataset
   parameters: {}
   work_pool:
     name: arxiv-pool-gcp-cloud-run-push-normal
-    work_queue_name: null
+    work_queue_name:
     job_variables: {}
-  schedule:
-    cron: 30 21 * * *
-    timezone: Europe/Zurich
-    day_or: true
+  schedule: null
