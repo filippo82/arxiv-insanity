@@ -6,12 +6,11 @@ from pathlib import Path
 
 import gcsfs
 import prefect
-from prefect import flow
-from prefect import get_run_logger
-from prefect import task
+from prefect import flow, get_run_logger, task
 from prefect.blocks.system import JSON
 from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
+from prefect_gcp.secret_manager import GcpSecret
 from vespa.application import Vespa
 from zarr import Array as ZarrArray
 from zarr import open_consolidated
@@ -25,14 +24,28 @@ PATH_TEMP.mkdir(exist_ok=True)
 
 TODAY = datetime.today().strftime(CONSTANTS["DATE_FORMAT"])
 FN_PROCESSED = CONSTANTS["FN_PROCESSED_API"].format(TODAY)
-FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS_API"].format(
-    TODAY,
-)  # This is actually a directory
+FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS_API"].format(TODAY)  # This is actually a directory
 
-ARXIV_CATEGORIES_SUBSET = {category.lower() for category in CONSTANTS["ARXIV_CATEGORIES_ACTIVE_CS_SUBSET"]}
+CATEGORIES_ACTIVE_CS_SUBSET = {category.lower() for category in CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]}
 
 WORD_EMBEDDING_DIMENSION = 384
 ZARR_CHUNK_SIZE = WORD_EMBEDDING_DIMENSION * 2
+
+
+@task
+def get_vespa_endpoint() -> str:
+    """Retrieve Vespa endpoint from Google Cloud Secret Manager.
+
+    Returns
+    -------
+    str
+        Vespa end point (http://address:port).
+    """
+    gcpsecret_block = GcpSecret.load(CONSTANTS["ARXIV_BLOCK_GCP_SECRET_VESPA_ENDPOINT"])
+
+    gcpsecret_block_value = gcpsecret_block.read_secret().decode("utf-8")
+
+    return gcpsecret_block_value
 
 
 @task
@@ -44,9 +57,7 @@ def download_processed_file_from_bucket() -> str:
     str
         URI of the processed file in the GCS bucket.
     """
-    gcp_cloud_storage_bucket_block = GcsBucket.load(
-        CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"],
-    )
+    gcp_cloud_storage_bucket_block = GcsBucket.load(CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"])
     fn_processed = gcp_cloud_storage_bucket_block.download_object_to_path(
         f"arxiv-api/{FN_PROCESSED}",
         PATH_TEMP / FN_PROCESSED,
@@ -56,19 +67,17 @@ def download_processed_file_from_bucket() -> str:
 
 @task
 def get_embeddings_as_zarr_array_from_bucket() -> ZarrArray:
-    """_summary_
+    """Download `zarr` array with embeddings from Google Cloud Storage.
 
     Returns
     -------
     ZarrArray
-        _description_
+        Input `zarr` array with embeddings.
     """
 
     logger = get_run_logger()
 
-    gcp_cloud_storage_bucket_block = GcsBucket.load(
-        CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"],
-    )
+    gcp_cloud_storage_bucket_block = GcsBucket.load(CONSTANTS["PREFECT_STORAGE_BLOCK_GCS_BUCKET"])
     bucket = gcp_cloud_storage_bucket_block.bucket
     bucket_folder = gcp_cloud_storage_bucket_block.bucket_folder.replace("/", "")
 
@@ -85,6 +94,22 @@ def get_embeddings_as_zarr_array_from_bucket() -> ZarrArray:
 
 @task
 def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
+    """Feed data to Vespa
+
+    Parameters
+    ----------
+    vespa_url : str
+        Vespa end point (address:port).
+    fn_processed : str
+        Input file with metadata.
+    z : ZarrArray
+        Input `zarr` array with embeddings.
+
+    Returns
+    -------
+    int
+        _description_
+    """
     logger = get_run_logger()
 
     vespa = Vespa(url=vespa_url)
@@ -111,7 +136,7 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
             if cnt >= restart_from:
                 article = json.loads(line)
                 # logger.info(f"cnt:{cnt}")
-                if ARXIV_CATEGORIES_SUBSET.isdisjoint(
+                if CATEGORIES_ACTIVE_CS_SUBSET.isdisjoint(
                     [category.lower() for category in article["categories"]],
                 ):
                     # logger.info(f"Skipping article {article['id']} with categories {article['categories']}")
@@ -201,10 +226,7 @@ def log_prefect_version(name: str):
 
 
 @flow(task_runner=SequentialTaskRunner())
-def feed_data_and_embeddings_to_vespa(
-    name: str = "Filippo",
-    vespa_url: str = "http://localhost:8080",
-):
+def feed_data_and_embeddings_to_vespa(name: str = "Filippo"):
     """Feed data to Vespa.
 
     Parameters
@@ -214,6 +236,7 @@ def feed_data_and_embeddings_to_vespa(
     """
     logger = get_run_logger()
     log_prefect_version(name)
+    vespa_url = get_vespa_endpoint()
     fn_processed = download_processed_file_from_bucket()
     z = get_embeddings_as_zarr_array_from_bucket()
     cnt_to_ingest = feed_data_to_vespa(vespa_url, fn_processed, z)
@@ -222,5 +245,4 @@ def feed_data_and_embeddings_to_vespa(
 
 if __name__ == "__main__":
     name = "Filippo is in da house"
-    vespa_url = "http://34.41.66.135:80"
-    feed_data_and_embeddings_to_vespa(name, vespa_url)
+    feed_data_and_embeddings_to_vespa(name)
