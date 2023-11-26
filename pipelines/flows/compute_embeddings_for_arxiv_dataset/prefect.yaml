@@ -3,7 +3,7 @@
 # control along with your flow code.
 
 # Generic metadata about this project
-name: feed_arxiv_dataset_to_vespa
+name: compute_embeddings_for_arxiv_dataset
 prefect-version: 2.14.5
 
 # build section allows you to manage and build docker images
@@ -25,20 +25,20 @@ pull:
 
 # the deployments section allows you to provide configuration for deploying flows
 deployments:
-- name: feed_arxiv_dataset_to_vespa
+- name: compute_embeddings_for_arxiv_dataset
   version: "0.2.0"
   tags: []
   description: |-
-    Feed data to Vespa.
+    Download from Kaggle, process, and copy the JSONL file to a GCS bucket.
 
     Parameters
     ----------
     name : str, optional
         The name of a dude or dudette, by default "Filippo".
-  entrypoint: feed_arxiv_dataset_to_vespa.py:feed_data_and_embeddings_to_vespa
+  entrypoint: compute_embeddings_for_arxiv_dataset.py:flow_compute_embeddings_for_arxiv_dataset
   parameters: {}
   work_pool:
     name: arxiv-pool-gcp-cloud-run-push-normal
-    work_queue_name: null
+    work_queue_name:
     job_variables: {}
   schedule: null

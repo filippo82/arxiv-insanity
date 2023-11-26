@@ -3,7 +3,7 @@
 # control along with your flow code.
 
 # Generic metadata about this project
-name: feed_arxiv_dataset_to_vespa
+name: get_metadata_from_arxiv_api
 prefect-version: 2.14.5
 
 # build section allows you to manage and build docker images
@@ -25,20 +25,27 @@ pull:
 
 # the deployments section allows you to provide configuration for deploying flows
 deployments:
-- name: feed_arxiv_dataset_to_vespa
+- name: get_metadata_from_arxiv_api
   version: "0.2.0"
   tags: []
   description: |-
-    Feed data to Vespa.
+    Get articles metadata from arXiv API, create a JSONL file, and copy it to a GCS bucket.
 
     Parameters
     ----------
     name : str, optional
-        The name of a dude or dudette, by default "Filippo".
-  entrypoint: feed_arxiv_dataset_to_vespa.py:feed_data_and_embeddings_to_vespa
+        The name of a dude or dudette, by default "Adam"
+    query : str, optional
+        Search query for the arXiv APIs, by default "cat:cs.*"
+    verbose : bool, optional
+        Verbose output, by default False
+  entrypoint: get_metadata_from_arxiv_api.py:flow_get_metadata_from_arxiv_api
   parameters: {}
   work_pool:
     name: arxiv-pool-gcp-cloud-run-push-normal
     work_queue_name: null
     job_variables: {}
-  schedule: null
+  schedule:
+    cron: 30 21 * * *
+    timezone: Europe/Zurich
+    day_or: true
