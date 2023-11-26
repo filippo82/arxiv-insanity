@@ -26,7 +26,7 @@ TODAY = datetime.today().strftime(CONSTANTS["DATE_FORMAT"])
 FN_PROCESSED = CONSTANTS["FN_PROCESSED_API"].format(TODAY)
 FN_EMBEDDINGS = CONSTANTS["FN_EMBEDDINGS_API"].format(TODAY)  # This is actually a directory
 
-CATEGORIES_ACTIVE_CS_SUBSET = {category.lower() for category in CONSTANTS["CATEGORIES_ACTIVE_CS_SUBSET"]}
+ARXIV_CATEGORIES_SUBSET = {category.lower() for category in CONSTANTS["ARXIV_CATEGORIES_ACTIVE_CS_SUBSET"]}
 
 WORD_EMBEDDING_DIMENSION = 384
 ZARR_CHUNK_SIZE = WORD_EMBEDDING_DIMENSION * 2
@@ -136,7 +136,7 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
             if cnt >= restart_from:
                 article = json.loads(line)
                 # logger.info(f"cnt:{cnt}")
-                if CATEGORIES_ACTIVE_CS_SUBSET.isdisjoint(
+                if ARXIV_CATEGORIES_SUBSET.isdisjoint(
                     [category.lower() for category in article["categories"]],
                 ):
                     # logger.info(f"Skipping article {article['id']} with categories {article['categories']}")
