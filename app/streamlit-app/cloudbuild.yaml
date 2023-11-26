@@ -14,8 +14,7 @@ steps:
   entrypoint: bash
   args: [
     "-c",
-    "gcloud",
-    "run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}", "--set-env-vars", "VESPA_ENDPOINT=$$VESPA_ENDPOINT", "--allow-unauthenticated", "--memory", "4Gi"
+    "gcloud run deploy streamlit-app-v2 --image ${_IMAGE_NAME_FULL}:latest --region ${_LOCATION} --set-env-vars VESPA_ENDPOINT=$$VESPA_ENDPOINT --allow-unauthenticated --memory 4Gi"
   ]
   secretEnv: ['VESPA_ENDPOINT']
 
