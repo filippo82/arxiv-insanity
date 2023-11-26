@@ -11,8 +11,13 @@ steps:
   args: ['push', "${_IMAGE_NAME_FULL}:latest"]
 # Deploy container image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: gcloud
-  args: ["run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}", "--set-env-vars", "VESPA_ENDPOINT=http://34.41.66.135:80", "--allow-unauthenticated", "--memory", "4Gi"]
+  entrypoint: bash
+  args: [
+    "-c",
+    "gcloud",
+    "run", "deploy", "streamlit-app-v2", "--image", "${_IMAGE_NAME_FULL}:latest", "--region", "${_LOCATION}", "--set-env-vars", "VESPA_ENDPOINT=$$VESPA_ENDPOINT", "--allow-unauthenticated", "--memory", "4Gi"
+  ]
+  secretEnv: ['VESPA_ENDPOINT']
 
 # Push the image to Container Registry
 images:
@@ -20,12 +25,19 @@ images:
 - '${_IMAGE_NAME_FULL}:latest'
 
 substitutions:
-    _LOCATION: "us-central1"
-    _GCLOUD_ARTIFACTS_REPOSITORY: 'prefect'
-    _IMAGE_NAME: 'streamlit-app'
-    _TAG: "${COMMIT_SHA}"
-    _IMAGE_NAME_FULL: '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_GCLOUD_ARTIFACTS_REPOSITORY}/${_IMAGE_NAME}'
+  _LOCATION: "us-central1"
+  _GCLOUD_ARTIFACTS_REPOSITORY: 'prefect'
+  _IMAGE_NAME: 'streamlit-app'
+  _TAG: "${COMMIT_SHA}"
+  _IMAGE_NAME_FULL: '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_GCLOUD_ARTIFACTS_REPOSITORY}/${_IMAGE_NAME}'
+
 options:
-    dynamic_substitutions: true
+  dynamic_substitutions: true
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/$PROJECT_ID/secrets/arxiv-insanity-vespa-endpoint/versions/latest
+    env: 'VESPA_ENDPOINT'
 
 # https://github.com/GoogleCloudPlatform/cloud-build-samples/blob/main/run-example-builddeploy/cloudbuild.yaml
+# https://cloud.google.com/build/docs/securing-builds/use-secrets#access-utf8-secrets
