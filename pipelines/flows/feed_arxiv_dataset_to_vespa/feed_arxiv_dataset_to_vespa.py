@@ -12,6 +12,7 @@ from prefect.task_runners import SequentialTaskRunner
 from prefect_gcp.cloud_storage import GcsBucket
 from prefect_gcp.secret_manager import GcpSecret
 from vespa.application import Vespa
+from vespa.io import VespaResponse
 from zarr import Array as ZarrArray
 from zarr import open_consolidated
 
@@ -112,6 +113,10 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
     """
     logger = get_run_logger()
 
+    def callback(response: VespaResponse, id: str):
+        if not response.is_successful():
+            print(f"Error when feeding document {id}: {response.get_json()}")
+
     vespa = Vespa(url=vespa_url)
 
     # This value comes from the `batch_size` used to compute embeddings with a V100 GPU
@@ -180,11 +185,11 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
                         # logger.info(f"Processed {cnt:7d} articles")
                         logger.info(f"Batch size: {len(batch_documents):7d}")
 
-                        res = vespa.feed_batch(
+                        _ = vespa.feed_iterable(
+                            batch_documents,
                             schema="article",
-                            batch=batch_documents,
-                            batch_size=batch_size_vespa_feed,
-                            output=True,
+                            max_queue_size=batch_size_vespa_feed,
+                            callback=callback,
                         )
                         batch_documents = []
 
@@ -201,8 +206,11 @@ def feed_data_to_vespa(vespa_url: str, fn_processed: str, z: ZarrArray) -> int:
 
     if batch_documents:
         # logger.info(batch_documents[0])
-        res = vespa.feed_batch(schema="article", batch=batch_documents)
-        logger.info(res[-1].json)
+        _ = vespa.feed_iterable(
+            batch_documents,
+            schema="article",
+            callback=callback,
+        )
 
     logger.info(f"Processed a total of {cnt:7d} articles")
     logger.info(f"Ingested a total of {cnt_to_ingest:7d} articles")
